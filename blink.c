@@ -24,7 +24,7 @@ uint8_t hallToMotor[8] = {
 // uint8_t hallToMotor[8] = {255, 2, 0, 1, 4, 3, 5, 255};  // Example hall table
 
 const int THROTTLE_LOW =
-    655;  // Minimum throttle: approximately 0.80 V on a 0-5 V input scale
+    1024;  // Minimum throttle: 1.25 V on a 0-5 V input scale
 const int THROTTLE_HIGH =
     3300;  // ADC value corresponding to maximum throttle, 0-4095
 
