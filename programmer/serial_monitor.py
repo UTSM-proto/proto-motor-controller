@@ -17,8 +17,10 @@ def parse_line(line):
             try: result[key] = int(value)
             except ValueError: result[key] = value
         return result
-    if re.match(r'^-?\d+,-?\d+,-?\d+,-?\d+,\d+,\d+,', line):
-        items = line.split(',')
+    if re.fullmatch(r'\s*\d+(?:,\s*\d+){7},?\s*', line):
+        return {'table': [int(v) for v in line.strip().rstrip(',').split(',')]}
+    if re.match(r'^\s*-?\d+\s*,\s*-?\d+\s*,\s*-?\d+\s*,\s*-?\d+\s*,\s*\d+\s*,\s*\d+\s*(?:,|$)', line):
+        items = [item.strip() for item in line.split(',')]
         result = dict(zip(('current_ma', 'target_ma', 'duty', 'bus_mv', 'hall', 'motor'), map(int, items[:6])))
         for item in items[6:]:
             if '=' in item:

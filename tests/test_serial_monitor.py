@@ -14,6 +14,13 @@ class MonitorTests(unittest.TestCase):
         self.assertEqual(result['motor'], 2)
         self.assertEqual(result['invalid'], 4)
 
+    def test_original_firmware_padded_csv_and_separate_table(self):
+        result = parse_line('   -80,      0,   2560,  48000,  5,  2')
+        self.assertEqual(result['hall'], 5)
+        self.assertEqual(result['duty'], 2560)
+        table = parse_line('255, 2, 0, 1, 4, 3, 5, 255, ')
+        self.assertEqual(table['table'], [255,2,0,1,4,3,5,255])
+
     def test_calibration_diagnostics(self):
         result = parse_line('diag cal=duplicate_hall cal_sector=2 cal_code=3 raw_hall=3 hall=3 motor=255 armed=0 block=calibration_failed')
         self.assertEqual(result['cal'], 'duplicate_hall')
