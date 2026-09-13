@@ -57,23 +57,25 @@ class WorkflowTests(unittest.TestCase):
                 (build / 'blink.uf2').write_bytes(b'test firmware artifact')
             if 'load' in args and flash_failure: raise RuntimeError('USB write failed')
         tools = {k: str(root / k) for k in ('cmake', 'ninja', 'gcc', 'picotool', 'sdk')}
-        with patch('backend.STATE', root), patch('backend.toolchain', return_value=tools), patch('backend.devices', return_value=[{'serial': 'E660123456789ABC'}] if found else []), patch.object(p, 'run', side_effect=fake_run):
+        def fake_program(artifact, selected, build_id, inventory, log, stage):
+            calls.append(['usb_program', selected['serial']])
+            if flash_failure: raise RuntimeError('USB write failed')
+        with patch('backend.STATE', root), patch('backend.toolchain', return_value=tools), patch('backend.devices', return_value=[{'serial': 'E660123456789ABC'}] if found else []), patch.object(p, 'run', side_effect=fake_run), patch('backend.usb_transport.program', side_effect=fake_program):
             p.work(defaults(), True, 'E660123456789ABC')
         return p.status(), calls, root
 
     def test_flash_targets_serial_and_verifies(self):
         job, calls, root = self.workflow()
         self.assertEqual(job['status'], 'complete')
-        writes = [c for c in calls if 'load' in c]
+        writes = [c for c in calls if 'usb_program' in c]
         self.assertEqual(len(writes), 1)
-        self.assertEqual(writes[0][-3:], ['--ser', 'E660123456789ABC', '-f'])
-        self.assertIn('-v', writes[0]); self.assertIn('-x', writes[0])
+        self.assertEqual(writes[0], ['usb_program', 'E660123456789ABC'])
         self.assertTrue((root / 'builds/test/manifest.json').is_file())
 
     def test_disconnect_blocks_flash_but_preserves_build(self):
         job, calls, root = self.workflow(found=False)
         self.assertEqual(job['status'], 'failed')
-        self.assertFalse(any('load' in c for c in calls))
+        self.assertFalse(any('usb_program' in c for c in calls))
         self.assertTrue(Path(job['artifact']).is_file())
 
     def test_failed_flash_never_reports_success(self):

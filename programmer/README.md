@@ -4,9 +4,11 @@ Double-click **Launch Programmer.cmd** in the repository root. Python starts a l
 
 1. Adjust settings using number fields, sliders or On/Off menus. Throttle thresholds also accept external volts; the default 5 V display scale corresponds to 4095 ADC counts, not permission to apply 5 V to a Pico pin.
 2. Save/import JSON profiles to keep configurations. Defaults match the last 1.25 V throttle setting, with synchronous switching off. The sensor scale factors now retain the fractional part that the old integer constants discarded.
-3. Connect a Pico and click **Refresh devices**. Select its USB serial number.
-4. **Build UF2 only** compiles without touching hardware. **Build & program Pico** builds a snapshot of the settings, writes that firmware to the selected device, verifies it with picotool, and restarts the Pico. Automatic identification moves the motor on restart. Release throttle before operation.
-5. If automatic USB reset fails, close serial monitors, reconnect while holding BOOTSEL, refresh devices and retry. Devices using nonstandard USB IDs are not currently enumerated. Only the original RP2040 Pico is supported by this build target.
+3. Connect a Pico normally by USB. Detection updates automatically every ten seconds; **Refresh devices** also checks immediately. Select the Pico if more than one is connected.
+4. **Build UF2 only** compiles without touching hardware. **Build & program Pico** builds a snapshot, requests a software USB reboot, follows the selected physical USB port into the bootloader, and transfers the UF2 through Windows' standard USB drive interface. It then waits for the application to return on that port and report the expected build ID. No manual BOOTSEL step or RP2 Boot WinUSB driver is required in normal operation. Automatic identification moves the motor on restart. Release throttle before operation.
+5. Close other serial monitors before programming. Software reboot requires responsive firmware with Pico SDK USB reset support. If firmware hangs or USB is disabled, manual BOOTSEL remains the recovery method. Devices using nonstandard USB IDs are not currently enumerated. Only the original RP2040 Pico is supported by this build target.
+
+The application and bootloader may have different serial numbers. The programmer correlates their physical USB location and resolves the bootloader volume through Windows device ancestry, never just by drive letter or volume label. Completion requires the expected firmware build ID over USB after transfer; this is startup confirmation, not byte-for-byte flash readback or validation of motor behavior. The [Pico SDK USB reset mechanism](https://github.com/raspberrypi/pico-sdk/blob/2.1.0/src/rp2_common/pico_stdio_usb/reset_interface.c) uses a 1200-baud serial request. Picotool remains a build dependency for producing UF2 files, but is not used to upload them.
 
 Every build lives in `.programmer/builds/<id>/`, with `config.json`, the source snapshot, `controller.uf2`, `manifest.json` (including SHA-256), and `operation.log`. Download UF2 from the page or use the saved file. Builds do not modify the checked-in default header. Changes made while a build runs belong to the next build.
 
@@ -39,7 +41,7 @@ Do not run the clone command over an existing SDK checkout. Restart the programm
 - PWM outputs receive their off levels after initialization and before the GPIO function is switched. This avoids initialization clearing the off compare value on inverted low-side outputs.
 - Current control handles zero duty without division by zero, uses a wide intermediate for current-limit arithmetic, and cannot integrate positive duty at zero throttle.
 - Synchronous switching is one explicit setting, off by default in both control modes. The GUI validates pin uniqueness, paired PWM channels, separate slices, ADC pins, throttle ordering and manual tables.
-- Telemetry snapshots shared values before printing: `current_mA,target_mA,duty16,bus_mV,hall,motor_state,invalid=N,transitions=N,adc=N`. A hall value of 255 means the sampled state was rejected. Calibration/table failures print a fault repeatedly.
+- Telemetry snapshots shared values before printing: `current_mA,target_mA,duty16,bus_mV,hall,motor_state,invalid=N,transitions=N,adc=N`. Each interval also prints `build=<id>` for programming confirmation. A hall value of 255 means the sampled state was rejected. Calibration/table failures print a fault repeatedly.
 
 The PCB's 5 V hall pull-ups remain a hardware issue. These firmware fixes cannot level-shift the hall inputs. Inspect the interface before powered tests. Calibration can still fail if duty is too low to move the rotor; it will now report failure and disable drive instead of accepting an incomplete table.
 

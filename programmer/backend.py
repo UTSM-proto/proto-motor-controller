@@ -11,6 +11,7 @@ import time
 import uuid
 
 from config import header, validate
+import usb_transport
 
 ROOT = Path(__file__).resolve().parents[1]
 STATE = ROOT / ".programmer"
@@ -50,8 +51,8 @@ def toolchain():
 def devices():
     if os.name != "nt":
         return []
-    command = r"Get-PnpDevice -PresentOnly -ErrorAction Stop | Where-Object { $_.InstanceId -match '^USB\\VID_2E8A&PID_(0003|000A)\\[A-Fa-f0-9]+$' } | Select-Object FriendlyName,InstanceId | ConvertTo-Json -Compress"
-    result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command], capture_output=True, text=True, timeout=20, creationflags=NO_WINDOW)
+    script = Path(__file__).with_name('windows_devices.ps1')
+    result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", str(script)], capture_output=True, text=True, timeout=30, creationflags=NO_WINDOW)
     if result.returncode:
         raise RuntimeError("Windows USB enumeration failed: " + result.stderr.strip())
     rows = json.loads(result.stdout) if result.stdout.strip() else []
@@ -61,7 +62,7 @@ def devices():
         match = re.fullmatch(r"USB\\VID_2E8A&PID_(0003|000A)\\([A-Fa-f0-9]+)", row["InstanceId"], re.I)
         if match:
             serial = match[2].upper()
-            output[serial] = dict(serial=serial, mode="BOOTSEL" if match[1] == "0003" else "USB firmware", name=row.get("FriendlyName") or "Raspberry Pi Pico")
+            output[serial] = dict(serial=serial, mode="BOOTSEL" if match[1] == "0003" else "USB firmware", name=row.get("FriendlyName") or "Raspberry Pi Pico", location=row.get('Location'), com=row.get('Com'), volumes=row.get('Volumes') or [])
     return list(output.values())
 
 
@@ -114,7 +115,7 @@ class Programmer:
                 shutil.copy2(ROOT / name, source / name)
             config_dir = source / "firmware"
             config_dir.mkdir()
-            (config_dir / "controller_config.h").write_text(header(values), encoding="utf-8")
+            (config_dir / "controller_config.h").write_text(header(values) + '#define PROGRAMMER_BUILD_ID "' + self.job['id'] + '"\n', encoding="utf-8")
             (folder / "config.json").write_text(json.dumps(values, indent=2), encoding="utf-8")
             build = folder / "build"
             env = os.environ.copy()
@@ -140,14 +141,11 @@ class Programmer:
                 self.job["sha256"] = digest
             if flash:
                 self.stage("Checking selected Pico")
-                if serial.upper() not in {d["serial"] for d in devices()}:
+                selected = next((d for d in devices() if d['serial'] == serial.upper()), None)
+                if not selected:
                     raise RuntimeError("Selected Pico is no longer connected. Reconnect it, refresh devices, and retry. The built UF2 is saved.")
-                self.stage("Programming and verifying flash")
-                # -v verifies flash before -x restarts it. Serial selection prevents
-                # accidentally programming a different connected board.
-                self.run([tools["picotool"], "load", "-v", "-x", str(artifact), "--ser", serial, "-f"], folder, timeout=90)
-                self.log("Flash verified by picotool; restart requested. Motor operation has not been validated.")
-            self.stage("Flash verified; restart requested" if flash else "Build ready")
+                usb_transport.program(artifact, selected, self.job['id'], devices, self.log, self.stage)
+            self.stage("Programmed; firmware startup confirmed" if flash else "Build ready")
             final_status = "complete"
         except Exception as exc:
             self.log(str(exc))

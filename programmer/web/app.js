@@ -4,7 +4,7 @@ const supplied = new URLSearchParams(location.hash.slice(1)).get('token');
 if (supplied) sessionStorage.setItem('programmer-token', supplied);
 history.replaceState(null, '', '/');
 const token = sessionStorage.getItem('programmer-token') || '';
-let config, schema, initial, group = 'Throttle', busy = false, lastJob = '', toolsReady = false;
+let config, schema, initial, group = 'Throttle', busy = false, lastJob = '', toolsReady = false, refreshing = false;
 async function api(path, body) {
   const response = await fetch('/api/' + path, {method: body === undefined ? 'GET' : 'POST', headers: {'X-Programmer-Token': token, 'Content-Type': 'application/json'}, body: body === undefined ? undefined : JSON.stringify(body)});
   const data = await response.json();
@@ -76,6 +76,8 @@ function render() {
   summary();
 }
 async function refresh() {
+  if (busy || refreshing) return;
+  refreshing = true;
   $('refresh').disabled = true;
   try {
     const previous = $('device').value, found = await api('devices');
@@ -83,9 +85,9 @@ async function refresh() {
     found.forEach(d => $('device').add(new Option(`${d.serial} · ${d.mode}`, d.serial)));
     if (found.some(d => d.serial === previous)) $('device').value = previous;
     else if (found.length === 1) $('device').value = found[0].serial;
-    $('device-note').textContent = found.length ? 'The selected USB serial is checked again before writing.' : 'Connect the Pico by USB and refresh. If needed, hold BOOTSEL while plugging it in. Close other serial monitors before programming.';
+    $('device-note').textContent = found.length ? 'Programming follows this Pico through reboot on the same USB port. Close other serial monitors before programming.' : 'Connect the Pico normally by USB. Detection updates automatically.';
   } catch (e) { message(e.message, true); }
-  finally { $('refresh').disabled = false; summary(); }
+  finally { refreshing = false; $('refresh').disabled = false; summary(); }
 }
 async function start(flash) {
   try { await api('validate', config); busy = true; summary(); const job = await api('build', {config, flash, serial: $('device').value}); lastJob = job.id; $('download').hidden = true; message(flash ? 'Building, then programming the selected Pico…' : 'Building firmware…'); await poll(); }
@@ -100,7 +102,7 @@ async function poll() {
     busy = job.status === 'running'; lastJob = signature;
     $('job-state').textContent = job.stage; $('log').textContent = job.log || 'Preparing build…';
     $('download').hidden = !job.artifact;
-    if (!busy && changed) message(job.status === 'failed' ? 'Operation failed. See the log below. If USB reset failed, reconnect in BOOTSEL mode and retry.' : job.stage + (job.artifact ? ' · Configuration and checksum saved with UF2.' : ''), job.status === 'failed');
+    if (!busy && changed) message(job.status === 'failed' ? 'Operation failed. See the specific error in the log below.' : job.stage + (job.artifact ? ' · Configuration and checksum saved with UF2.' : ''), job.status === 'failed');
     summary();
   } catch (e) { message('Connection lost: ' + e.message, true); }
 }
@@ -116,7 +118,7 @@ async function init() {
     $('device').onchange = summary; $('refresh').onclick = refresh;
     $('build').onclick = () => start(false); $('flash').onclick = () => start(true);
     $('download').onclick = async () => {try {const r = await fetch('/api/artifact', {headers: {'X-Programmer-Token': token}}); if (!r.ok) throw new Error('No build available'); save('utsm-controller.uf2', await r.blob(), 'application/octet-stream');} catch(e) {message(e.message, true);}};
-    render(); await refresh(); await poll(); setInterval(poll, 1500);
+    render(); await refresh(); await poll(); setInterval(poll, 1500); setInterval(refresh, 10000);
   } catch (e) { message(e.message, true); $('log').textContent = 'Start the app using Launch Programmer.cmd to open an authenticated local session.'; }
 }
 init();

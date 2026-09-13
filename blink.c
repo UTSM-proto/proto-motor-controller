@@ -9,6 +9,10 @@
 #include <controller_config.h>
 #include "controller_logic.h"
 
+#ifndef PROGRAMMER_BUILD_ID
+#define PROGRAMMER_BUILD_ID "manual"
+#endif
+
 static uint8_t hallToMotor[8] = HALL_TABLE_INITIALIZER;
 static uint phase_slices[3];
 static HallFilter hall_filter = {255, 0, 255, false};
@@ -188,6 +192,7 @@ int main(void) {
     if (!valid) {
         write_pwm(255, 0, false);
         while (true) {
+            printf("build=%s\n", PROGRAMMER_BUILD_ID);
             printf("FAULT: hall calibration/table invalid; drive disabled. Reconfigure or reboot.\n");
             gpio_put(LED_PIN, !gpio_get(LED_PIN)); sleep_ms(500);
         }
@@ -203,6 +208,7 @@ int main(void) {
         unsigned h = hall, state = motor_state;
         uint32_t invalid = invalid_hall_samples, transitions = transition_faults, adc = adc_errors;
         restore_interrupts(flags);
+        printf("build=%s\n", PROGRAMMER_BUILD_ID);
         printf("%d,%d,%d,%d,%u,%u,invalid=%lu,transitions=%lu,adc=%lu\n",
             current, target, duty, volts, h, state,
             (unsigned long)invalid, (unsigned long)transitions, (unsigned long)adc);
