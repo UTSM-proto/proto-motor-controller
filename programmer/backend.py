@@ -12,6 +12,7 @@ import uuid
 
 from config import header, validate
 import usb_transport
+import build_cache
 
 ROOT = Path(__file__).resolve().parents[1]
 STATE = ROOT / ".programmer"
@@ -115,27 +116,46 @@ class Programmer:
                 shutil.copy2(ROOT / name, source / name)
             config_dir = source / "firmware"
             config_dir.mkdir()
-            (config_dir / "controller_config.h").write_text(header(values) + '#define PROGRAMMER_BUILD_ID "' + self.job['id'] + '"\n', encoding="utf-8")
             (folder / "config.json").write_text(json.dumps(values, indent=2), encoding="utf-8")
+            self.stage("Checking build cache")
+            config_header = header(values)
+            cache_key = build_cache.fingerprint(source, config_header, tools)
+            cached = build_cache.lookup(STATE, cache_key)
+            firmware_build_id = cached[1]['firmware_build_id'] if cached else self.job['id']
+            (config_dir / "controller_config.h").write_text(config_header + '#define PROGRAMMER_BUILD_ID "' + firmware_build_id + '"\n', encoding="utf-8")
+            with self.lock:
+                self.job['cache_hit'] = bool(cached)
+                self.job['firmware_build_id'] = firmware_build_id
             build = folder / "build"
             env = os.environ.copy()
             env["PICO_SDK_PATH"] = tools["sdk"]
             env["PICO_TOOLCHAIN_PATH"] = str(Path(tools["gcc"]).parent.parent)
             env["PATH"] = str(Path(tools["gcc"]).parent) + os.pathsep + env.get("PATH", "")
-            self.stage("Configuring")
-            self.run([tools["cmake"], "-S", source, "-B", build, "-G", "Ninja",
-                "-DCMAKE_BUILD_TYPE=Release", "-DPICO_BOARD=pico", "-DPICO_COMPILER=pico_arm_cortex_m0plus_gcc",
-                "-DCMAKE_MAKE_PROGRAM=" + tools["ninja"], "-DPICO_SDK_PATH=" + tools["sdk"],
-                "-DPICO_TOOLCHAIN_PATH=" + env["PICO_TOOLCHAIN_PATH"],
-                "-Dpicotool_DIR=" + str(Path(tools["picotool"]).parent)], folder, env)
-            self.stage("Compiling firmware")
-            self.run([tools["cmake"], "--build", build, "--parallel", "4"], folder, env, 600)
             artifact = folder / "controller.uf2"
-            shutil.copy2(build / "blink.uf2", artifact)
+            if cached:
+                self.stage("Using cached firmware")
+                self.log('Cache hit: reusing firmware build=' + firmware_build_id + '. Skipping CMake and compilation.')
+                shutil.copy2(cached[0], artifact)
+                if build_cache.sha256(artifact) != cached[1]['uf2_sha256']:
+                    raise RuntimeError('Cached firmware changed during copying; retry to rebuild.')
+            else:
+                self.log('No matching verified cache entry. Building firmware.')
+                self.stage("Configuring")
+                self.run([tools["cmake"], "-S", source, "-B", build, "-G", "Ninja",
+                    "-DCMAKE_BUILD_TYPE=Release", "-DPICO_BOARD=pico", "-DPICO_COMPILER=pico_arm_cortex_m0plus_gcc",
+                    "-DCMAKE_MAKE_PROGRAM=" + tools["ninja"], "-DPICO_SDK_PATH=" + tools["sdk"],
+                    "-DPICO_TOOLCHAIN_PATH=" + env["PICO_TOOLCHAIN_PATH"],
+                    "-Dpicotool_DIR=" + str(Path(tools["picotool"]).parent)], folder, env)
+                self.stage("Compiling firmware")
+                self.run([tools["cmake"], "--build", build, "--parallel", "4"], folder, env, 600)
+                shutil.copy2(build / "blink.uf2", artifact)
             digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
-            manifest = dict(config=values, uf2_sha256=digest, tools=tools,
+            manifest = dict(config=values, uf2_sha256=digest, tools=tools, cache_key=cache_key,
+                firmware_build_id=firmware_build_id, cache_hit=bool(cached),
                 source_sha256={name: hashlib.sha256((source / name).read_bytes()).hexdigest() for name in ("blink.c", "controller_logic.h", "CMakeLists.txt", "pico_sdk_import.cmake")})
             (folder / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+            if not cached:
+                build_cache.publish(STATE, cache_key, firmware_build_id)
             with self.lock:
                 self.job["artifact"] = str(artifact)
                 self.job["sha256"] = digest
@@ -144,8 +164,8 @@ class Programmer:
                 selected = next((d for d in devices() if d['serial'] == serial.upper()), None)
                 if not selected:
                     raise RuntimeError("Selected Pico is no longer connected. Reconnect it, refresh devices, and retry. The built UF2 is saved.")
-                usb_transport.program(artifact, selected, self.job['id'], devices, self.log, self.stage)
-            self.stage("Programmed; firmware startup confirmed" if flash else "Build ready")
+                usb_transport.program(artifact, selected, firmware_build_id, devices, self.log, self.stage)
+            self.stage("Programmed; firmware startup confirmed" if flash else ("Cached build ready" if cached else "Build ready"))
             final_status = "complete"
         except Exception as exc:
             self.log(str(exc))

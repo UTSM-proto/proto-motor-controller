@@ -56,7 +56,11 @@ class WorkflowTests(unittest.TestCase):
                 build = root / 'builds/test/build'; build.mkdir()
                 (build / 'blink.uf2').write_bytes(b'test firmware artifact')
             if 'load' in args and flash_failure: raise RuntimeError('USB write failed')
-        tools = {k: str(root / k) for k in ('cmake', 'ninja', 'gcc', 'picotool', 'sdk')}
+        tools = {k: str(root / 'toolchain' / 'bin' / k) for k in ('cmake', 'ninja', 'gcc', 'picotool')}
+        for path in tools.values():
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            Path(path).write_bytes(b'tool')
+        tools['sdk'] = str(root / 'sdk'); Path(tools['sdk']).mkdir()
         def fake_program(artifact, selected, build_id, inventory, log, stage):
             calls.append(['usb_program', selected['serial']])
             if flash_failure: raise RuntimeError('USB write failed')
@@ -122,6 +126,13 @@ class HttpTests(unittest.TestCase):
     def test_invalid_build_rejected(self):
         with self.assertRaises(urllib.error.HTTPError) as error: self.request('/api/build', {'config': {}})
         self.assertEqual(error.exception.code, 400)
+
+    def test_outdated_service_blocks_programming(self):
+        with patch('app.service_signature', return_value='updated-code'):
+            with self.assertRaises(urllib.error.HTTPError) as error:
+                self.request('/api/build', {'config': defaults()})
+            self.assertEqual(error.exception.code, 400)
+            self.assertIn('updated', error.exception.read().decode())
 
     def test_path_traversal(self):
         with self.assertRaises(urllib.error.HTTPError) as error: self.request('/../blink.c')

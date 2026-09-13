@@ -102,7 +102,7 @@ async function poll() {
     busy = job.status === 'running'; lastJob = signature;
     $('job-state').textContent = job.stage; $('log').textContent = job.log || 'Preparing build…';
     $('download').hidden = !job.artifact;
-    if (!busy && changed) message(job.status === 'failed' ? 'Operation failed. See the specific error in the log below.' : job.stage + (job.artifact ? ' · Configuration and checksum saved with UF2.' : ''), job.status === 'failed');
+    if (!busy && changed) message(job.status === 'failed' ? 'Operation failed. See the specific error in the log below.' : job.stage + (job.cache_hit ? ' · Cached firmware reused.' : '') + (job.artifact ? ' · Configuration and checksum saved with UF2.' : ''), job.status === 'failed');
     summary();
   } catch (e) { message('Connection lost: ' + e.message, true); }
 }

@@ -31,7 +31,7 @@ const path = require('node:path');
   await page.getByText('Profile imported into editor.', {exact: true}).waitFor();
   assert.equal(await page.locator('#THROTTLE_LOW').inputValue(), '1024');
   await page.getByRole('button', {name: 'Build UF2 only', exact: true}).click();
-  await page.locator('#job-state').filter({hasText: /^Build ready$/}).waitFor({timeout: 180000});
+  await page.locator('#job-state').filter({hasText: /^(Build ready|Cached build ready)$/}).waitFor({timeout: 180000});
   await page.locator('#download').waitFor({state: 'visible'});
   await page.screenshot({path: '.programmer/preview.png', fullPage: true});
   await page.setViewportSize({width: 390, height: 844});

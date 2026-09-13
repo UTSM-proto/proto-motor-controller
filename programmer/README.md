@@ -12,6 +12,10 @@ The application and bootloader may have different serial numbers. The programmer
 
 Every build lives in `.programmer/builds/<id>/`, with `config.json`, the source snapshot, `controller.uf2`, `manifest.json` (including SHA-256), and `operation.log`. Download UF2 from the page or use the saved file. Builds do not modify the checked-in default header. Changes made while a build runs belong to the next build.
 
+Matching builds are reused automatically for both build-only and programming operations. The cache key covers the generated configuration, firmware sources, build recipe, executable checksums, SDK/toolchain file sizes and modification times, and relevant build environment. Each cache hit verifies the UF2 checksum and keeps the original firmware build ID for USB startup confirmation. Missing or damaged cache files cause a rebuild. Cache entries are saved after successful compilation even if the subsequent USB operation fails, so a programming retry does not compile again. Builds made before the cache was introduced require one new build to establish their cache entry. Each operation still gets its own log and manifest.
+
+The launcher uses one dashboard on port 8766. Launching it again opens the existing instance; after an update it gracefully replaces an idle outdated instance. A running build/write cannot be interrupted this way. An old server also refuses new programming jobs if its backend files have changed, with a message to run the launcher again.
+
 ## Build tools
 
 The page reports detected tool paths. It supports the Pico VS Code tool layout, the existing UTSM tools directory, STM32Cube Arm GCC/Ninja, or explicit environment variables:
