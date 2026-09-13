@@ -17,8 +17,6 @@ function save(name, text, type = 'application/json') {
   const a = document.createElement('a'); a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function summary() {
-  $('threshold').textContent = (config.THROTTLE_LOW / 4095 * config.THROTTLE_INPUT_FULL_SCALE_V).toFixed(3) + ' V';
-  $('ramp').textContent = `${config.THROTTLE_LOW} ADC counts · ${(65535 / config.THROTTLE_SLEW_RATE / config.F_PWM).toFixed(2)} s full rise`;
   $('startup-note').textContent = config.IDENTIFY_HALLS_ON_BOOT ? 'Programming restarts the Pico. Automatic hall calibration will move the motor once at startup. Secure the motor and release the throttle before programming.' : 'Programming restarts the Pico using your manual hall table. Release throttle to arm the controller.';
   $('flash').disabled = busy || !toolsReady || !$('device').value;
   $('build').disabled = busy || !toolsReady;
