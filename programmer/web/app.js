@@ -5,6 +5,7 @@ if (supplied) sessionStorage.setItem('programmer-token', supplied);
 history.replaceState(null, '', '/');
 const token = sessionStorage.getItem('programmer-token') || '';
 let config, schema, initial, group = 'Throttle', busy = false, lastJob = '', toolsReady = false, refreshing = false;
+let monitorLines = [], monitorSequence = -1;
 async function api(path, body) {
   const response = await fetch('/api/' + path, {method: body === undefined ? 'GET' : 'POST', headers: {'X-Programmer-Token': token, 'Content-Type': 'application/json'}, body: body === undefined ? undefined : JSON.stringify(body)});
   const data = await response.json();
@@ -106,6 +107,36 @@ async function poll() {
     summary();
   } catch (e) { message('Connection lost: ' + e.message, true); }
 }
+async function pollMonitor() {
+  try {
+    const state = await api('serial');
+    $('serial-status').textContent = `${state.status}${state.com ? ' · ' + state.com : ''}`;
+    $('monitor-start').disabled = busy || !config || !$('device').value || ['connected','connecting'].includes(state.status);
+    const d = state.latest;
+    $('diag-cal').textContent = d.cal ?? (d.block === 'calibration_failed' ? 'Failed' : '—');
+    $('diag-block').textContent = d.block ?? '—';
+    $('diag-throttle').textContent = d.throttle_adc ?? '—';
+    const code = n => n === undefined ? '—' : n === 255 ? '255 (rejected)' : `${n} (${Number(n).toString(2).padStart(3,'0')})`;
+    $('diag-hall').textContent = `${code(d.raw_hall)} / ${code(d.hall)}`;
+    $('diag-motor').textContent = d.motor === 255 ? '255 · disabled' : d.motor ?? '—';
+    $('diag-duty').textContent = `${d.duty ?? '—'} / ${d.armed === undefined ? 'unknown' : d.armed ? 'armed' : 'not armed'}`;
+    const details = [];
+    if (d.cal_sector !== undefined) details.push(`Calibration sector ${d.cal_sector}, code ${d.cal_code}, previous ${d.cal_previous}`);
+    if (d.table) details.push('Hall table: ' + d.table.join(', '));
+    if (d.build) details.push('Firmware build: ' + d.build);
+    if (state.log_path) details.push('Session log: ' + state.log_path);
+    if (details.length) $('serial-detail').textContent = details.join(' · ');
+    if (monitorSequence !== state.sequence) {
+      monitorSequence = state.sequence; monitorLines = state.lines;
+      $('serial-log').textContent = monitorLines.map(r => `${r.time}  ${r.text}`).join('\n') || 'No serial data yet.';
+      if ($('monitor-scroll').checked) $('serial-log').scrollTop = $('serial-log').scrollHeight;
+    }
+  } catch (e) { $('serial-status').textContent = 'Monitor unavailable: ' + e.message; }
+}
+async function monitorAction(action) {
+  try { await api('serial/' + action, {serial: $('device').value}); await pollMonitor(); }
+  catch (e) { $('serial-status').textContent = e.message; }
+}
 async function init() {
   try {
     const data = await api('config'); schema = data.fields; initial = data.defaults; config = structuredClone(initial);
@@ -117,8 +148,12 @@ async function init() {
     $('file').onchange = async () => {try {const file = $('file').files[0]; if (!file) return; if (file.size > 32768) throw new Error('Profile too large.'); const values = JSON.parse(await file.text()); await api('validate', values); config = values; render(); message('Profile imported into editor.');} catch(e) {message(e.message, true);} finally {$('file').value = '';}};
     $('device').onchange = summary; $('refresh').onclick = refresh;
     $('build').onclick = () => start(false); $('flash').onclick = () => start(true);
+    $('monitor-start').onclick = () => monitorAction('start');
+    $('monitor-stop').onclick = () => monitorAction('stop');
+    $('monitor-clear').onclick = () => monitorAction('clear');
+    $('monitor-export').onclick = () => save('pico-serial.log', monitorLines.map(r => `${r.time}  ${r.text}`).join('\n'), 'text/plain');
     $('download').onclick = async () => {try {const r = await fetch('/api/artifact', {headers: {'X-Programmer-Token': token}}); if (!r.ok) throw new Error('No build available'); save('utsm-controller.uf2', await r.blob(), 'application/octet-stream');} catch(e) {message(e.message, true);}};
-    render(); await refresh(); await poll(); setInterval(poll, 1500); setInterval(refresh, 10000);
+    render(); await refresh(); await poll(); await pollMonitor(); setInterval(poll, 1500); setInterval(refresh, 10000); setInterval(pollMonitor, 1000);
   } catch (e) { message(e.message, true); $('log').textContent = 'Start the app using Launch Programmer.cmd to open an authenticated local session.'; }
 }
 init();

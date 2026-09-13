@@ -14,11 +14,12 @@ import webbrowser
 
 from backend import Programmer, devices, toolchain
 from config import FIELDS, defaults, validate
+from serial_monitor import SerialMonitor
 
 
 def service_signature():
     digest = hashlib.sha256()
-    for name in ('app.py', 'backend.py', 'build_cache.py', 'config.py', 'usb_transport.py', 'windows_devices.ps1'):
+    for name in ('app.py', 'backend.py', 'build_cache.py', 'config.py', 'usb_transport.py', 'windows_devices.ps1', 'serial_monitor.py', 'serial_reader.ps1'):
         digest.update((Path(__file__).parent / name).read_bytes())
     return digest.hexdigest()
 
@@ -50,7 +51,9 @@ def existing_server(port):
 
 
 def make_server(port=0):
-    programmer = Programmer()
+    monitor = SerialMonitor(Path(__file__).resolve().parents[1] / '.programmer')
+    programmer = Programmer(monitor)
+    io_gate = threading.RLock()
     token = secrets.token_urlsafe(32)
 
     class Handler(BaseHTTPRequestHandler):
@@ -87,6 +90,7 @@ def make_server(port=0):
                 if path == "/api/config": return self.respond(200, dict(fields=FIELDS, defaults=defaults(), tools=toolchain()))
                 if path == "/api/devices": return self.respond(200, devices())
                 if path == "/api/job": return self.respond(200, programmer.status())
+                if path == '/api/serial': return self.respond(200, monitor.snapshot())
                 if path == "/api/server": return self.respond(200, dict(version=LOADED_SIGNATURE))
                 if path == "/api/artifact":
                     job = programmer.status()
@@ -101,10 +105,23 @@ def make_server(port=0):
                 length = int(self.headers.get("Content-Length", "0"))
                 if not 0 < length <= 32768: raise ValueError("Invalid request size")
                 data = json.loads(self.rfile.read(length))
+                if self.path in ('/api/serial/start', '/api/serial/stop', '/api/serial/clear'):
+                    with io_gate:
+                        if self.path == '/api/serial/start':
+                            job = programmer.status()
+                            if job and job['status'] == 'running' and job.get('flash'):
+                                raise ValueError('Wait for programming to finish before opening the serial monitor.')
+                            selected = next((d for d in devices() if d['serial'] == data.get('serial')), None)
+                            if not selected: raise ValueError('Select a connected Pico.')
+                            monitor.start(selected)
+                        elif self.path == '/api/serial/stop': monitor.stop()
+                        else: monitor.clear()
+                    return self.respond(200, monitor.snapshot())
                 if self.path == '/api/shutdown':
                     job = programmer.status()
                     if job and job['status'] == 'running':
                         raise ValueError('Wait for the active programming operation before restarting the dashboard.')
+                    monitor.stop()
                     self.respond(200, {'status': 'stopping'})
                     threading.Thread(target=self.server.shutdown, daemon=True).start()
                     return
@@ -113,12 +130,19 @@ def make_server(port=0):
                     if service_signature() != LOADED_SIGNATURE:
                         raise ValueError('The programmer has been updated. Run Launch Programmer.cmd to restart it before programming.')
                     if type(data.get("flash", False)) is not bool: raise ValueError("Invalid flash flag")
-                    return self.respond(202, programmer.start(data["config"], data.get("flash", False), data.get("serial")))
+                    with io_gate:
+                        job = programmer.start(data["config"], data.get("flash", False), data.get("serial"))
+                    return self.respond(202, job)
                 self.respond(404, {"error": "Not found"})
             except (ValueError, KeyError, TypeError) as exc: self.respond(400, {"error": str(exc)})
             except Exception as exc: self.respond(500, {"error": str(exc)})
 
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    close = server.server_close
+    def close_with_monitor():
+        monitor.stop()
+        close()
+    server.server_close = close_with_monitor
     return server, f"http://127.0.0.1:{server.server_port}/#token={token}"
 
 

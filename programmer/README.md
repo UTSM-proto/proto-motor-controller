@@ -16,6 +16,16 @@ Matching builds are reused automatically for both build-only and programming ope
 
 The launcher uses one dashboard on port 8766. Launching it again opens the existing instance; after an update it gracefully replaces an idle outdated instance. A running build/write cannot be interrupted this way. An old server also refuses new programming jobs if its backend files have changed, with a message to run the launcher again.
 
+## Serial monitor and motor diagnosis
+
+Select the connected Pico and use **Connect monitor**. The monitor reads USB at 115200 baud, shows raw timestamped lines and decoded calibration, drive-block, throttle ADC, hall, motor-state and duty/armed values. It can read the older CSV format too. Connecting does not reboot the Pico or send motor commands. **Clear display** clears the browser buffer; **Save visible log** exports it. Up to 1500 lines are retained for display, and each connection saves up to 10 MB under `.programmer/serial/`.
+
+If the monitor is connected when programming begins, the programmer closes its serial handle before USB reset and reconnects after successful firmware confirmation. Disconnect any external serial monitor to avoid port conflicts. A failed upload may leave this monitor paused; reconnect it when the device is back in normal USB mode.
+
+Firmware diagnostics persist after startup: `cal` reports success or the calibration failure type, `cal_sector` identifies the failed sector, and `cal_observed` lists the six sampled hall codes (255 means unavailable/rejected). `raw_hall` is the last simultaneous GPIO snapshot; binary digits are Hall C, B, A. `hall` is the majority-filtered code. `block` explains why drive is disabled. `throttle_not_released` means the throttle has not gone below the start threshold since boot; `calibration_failed` means PWM control was never enabled. These diagnostic additions do not alter calibration passes or relax validation.
+
+Start diagnosis with the persistent calibration result. If calibration failed, inspect the recorded sector/codes before changing duty, settling time or pass count. If calibration passed, inspect throttle ADC/arming, then hall transition counters and commanded duty. Firmware startup confirmation during upload does not imply calibration passed or motor drive is ready.
+
 ## Build tools
 
 The page reports detected tool paths. It supports the Pico VS Code tool layout, the existing UTSM tools directory, STM32Cube Arm GCC/Ninja, or explicit environment variables:

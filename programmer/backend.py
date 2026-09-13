@@ -68,7 +68,8 @@ def devices():
 
 
 class Programmer:
-    def __init__(self):
+    def __init__(self, monitor=None):
+        self.monitor = monitor
         self.lock = threading.Lock()
         self.job = None
 
@@ -164,7 +165,13 @@ class Programmer:
                 selected = next((d for d in devices() if d['serial'] == serial.upper()), None)
                 if not selected:
                     raise RuntimeError("Selected Pico is no longer connected. Reconnect it, refresh devices, and retry. The built UF2 is saved.")
-                usb_transport.program(artifact, selected, firmware_build_id, devices, self.log, self.stage)
+                resume_monitor = self.monitor.pause_for_programming() if self.monitor else False
+                runtime = usb_transport.program(artifact, selected, firmware_build_id, devices, self.log, self.stage)
+                if resume_monitor:
+                    try:
+                        self.monitor.resume_after_programming(runtime)
+                    except Exception as exc:
+                        self.log('Firmware programmed, but serial monitor could not reopen: ' + str(exc))
             self.stage("Programmed; firmware startup confirmed" if flash else ("Cached build ready" if cached else "Build ready"))
             final_status = "complete"
         except Exception as exc:
