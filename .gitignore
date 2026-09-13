@@ -5,3 +5,5 @@ __MACOSX/
 *.kicad-bak
 *-backups/
 fp-info-cache
+.programmer/
+__pycache__/

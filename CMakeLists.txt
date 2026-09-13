@@ -39,6 +39,10 @@ add_executable(blink
     blink.c
     )
 
+set(CONTROLLER_CONFIG_DIR "${CMAKE_CURRENT_LIST_DIR}/firmware" CACHE PATH "Generated controller configuration directory")
+target_include_directories(blink PRIVATE "${CONTROLLER_CONFIG_DIR}")
+target_compile_options(blink PRIVATE -Wall -Wextra)
+
 # pull in common dependencies
 target_link_libraries(blink pico_stdlib)
 
@@ -52,9 +56,6 @@ target_link_libraries(blink pico_stdlib hardware_pwm hardware_adc)
 pico_enable_stdio_usb(blink 1)	# Enable USB printf output
 pico_enable_stdio_uart(blink 0)	# Disable serial printf output
 
-pico_add_extra_outputs(blink)
-
-# create map/bin/hex file etc.
 pico_add_extra_outputs(blink)
 
 # add url via pico_set_program_url
