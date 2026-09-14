@@ -8,7 +8,7 @@ def field(key, label, group, default, low, high, help, step=1):
 
 
 FIELDS = [
-    field("THROTTLE_LOW", "Throttle starts at (ADC counts)", "Throttle", 1024, 0, 4094, "Demand is zero at or below this reading. Voltage uses your external input scale, not the Pico pin voltage."),
+    field("THROTTLE_LOW", "Throttle starts at (ADC counts)", "Throttle", 540, 0, 4094, "Demand is zero at or below this reading. Voltage uses your external input scale, not the Pico pin voltage."),
     field("THROTTLE_HIGH", "Full throttle (ADC counts)", "Throttle", 3300, 1, 4095, "Demand reaches full scale here. Must exceed the start threshold."),
     field("THROTTLE_INPUT_FULL_SCALE_V", "External throttle full scale (V)", "Throttle", 5.0, 0.1, 100, "Display conversion only: 4095 counts equals this external voltage. This does not make a Pico ADC 5 V tolerant.", 0.01),
     field("THROTTLE_SLEW_RATE", "Throttle rise per control cycle", "Throttle", 1, 1, 65535, "Internal duty counts added each PWM cycle. Full-scale rise time is approximately 65535 / (rate × PWM Hz) seconds. Decreases apply immediately."),

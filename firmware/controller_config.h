@@ -1,6 +1,6 @@
 // Generated configuration. Edit with the Windows programmer.
 #pragma once
-#define THROTTLE_LOW (1024)
+#define THROTTLE_LOW (540)
 #define THROTTLE_HIGH (3300)
 #define THROTTLE_INPUT_FULL_SCALE_V (5)
 #define THROTTLE_SLEW_RATE (1)
