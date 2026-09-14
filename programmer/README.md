@@ -26,6 +26,10 @@ Firmware diagnostics persist after startup: `cal` reports success or the calibra
 
 Start diagnosis with the persistent calibration result. If calibration failed, inspect the recorded sector/codes before changing duty, settling time or pass count. If calibration passed, inspect throttle ADC/arming, then hall transition counters and commanded duty. Firmware startup confirmation during upload does not imply calibration passed or motor drive is ready.
 
+Brief ambiguous Hall reads now blank the outputs without resetting the throttle ramp. The `invalid` counter includes whole-state vote ties, not only physical 000/111 inputs. `duty` reports the retained internal command; outputs are off whenever `block=invalid_hall` or `hall_settling`. The current integrator is frozen while blanked. If no stable sector is accepted for `HALL_LOSS_TIMEOUT_CYCLES` (default 16, approximately 1 ms at 16 kHz), `block=hall_loss_fault` latches drive off and resets the ramp until throttle release. Skipped-sector and ADC shutdowns remain in place. The timeout must exceed runtime stable cycles. This recovery timing still needs physical bench acceptance.
+
+Profiles saved before the Hall loss timeout setting was added must be recreated using the current editor; older schemas are rejected explicitly. Reload the dashboard using the launcher after updating the backend.
+
 ## Build tools
 
 The page reports detected tool paths. It supports the Pico VS Code tool layout, the existing UTSM tools directory, STM32Cube Arm GCC/Ninja, or explicit environment variables:

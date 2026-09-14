@@ -26,6 +26,7 @@ FIELDS = [
     field("BOOT_DELAY_MS", "Delay before calibration (ms)", "Hall calibration", 2000, 0, 10000, "Time after initialization before automatic motor movement."),
     field("HALL_OVERSAMPLE", "Whole-state samples per read", "Hall filtering", 8, 1, 32, "Votes on complete three-bit GPIO snapshots. Ties and invalid codes are rejected; this avoids manufacturing a state by voting on individual bits."),
     field("HALL_STABLE_CYCLES", "Runtime stable cycles", "Hall filtering", 2, 1, 16, "Consecutive control cycles required to accept a hall state. Pending or invalid states turn phases off. Excess filtering limits maximum electrical speed."),
+    field("HALL_LOSS_TIMEOUT_CYCLES", "Hall loss timeout (cycles)", "Hall filtering", 16, 2, 320, "Outputs turn off immediately for uncertain Hall feedback. Brief gaps preserve the throttle ramp. This many consecutive cycles without an accepted sector latch drive off until throttle release. Default 16 cycles is 1 ms at 16 kHz; must exceed runtime stable cycles."),
     field("HALL_VALIDATE_TRANSITIONS", "Reject skipped hall sectors", "Hall filtering", True, 0, 1, "Accepts only adjacent commutation sectors in either direction while driving. Release throttle to resynchronize after a skipped-sector fault."),
     field("CURRENT_SCALING", "Current scale (mA / ADC count)", "Sensors & timing", 80.56640625, 0.001, 10000, "Multiplies zero-corrected current ADC counts. Original circuit: 3.3 V reference, 0.5 mΩ shunt, gain 20.", 0.001),
     field("VOLTAGE_SCALING", "Bus scale (mV / ADC count)", "Sensors & timing", 18.017578125, 0.001, 10000, "Converts bus-voltage ADC counts using the 47 kΩ / 2.2 kΩ divider. Verify against a meter.", 0.001),
@@ -70,6 +71,8 @@ def validate(values):
             raise ValueError(f'{f["key"]} must be between {f["min"]} and {f["max"]}' + (" and a whole number." if f["step"] == 1 else "."))
     if values["THROTTLE_LOW"] >= values["THROTTLE_HIGH"]:
         raise ValueError("Throttle start must be below full throttle.")
+    if values["HALL_LOSS_TIMEOUT_CYCLES"] <= values["HALL_STABLE_CYCLES"]:
+        raise ValueError("Hall loss timeout must exceed runtime stable cycles.")
     pins = [values[f["key"]] for f in FIELDS if f["group"] == "Board pins"]
     if len(set(pins)) != len(pins):
         raise ValueError("GPIO assignments must be unique.")

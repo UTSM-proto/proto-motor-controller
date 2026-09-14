@@ -16,6 +16,7 @@
 static uint8_t hallToMotor[8] = HALL_TABLE_INITIALIZER;
 static uint phase_slices[3];
 static HallFilter hall_filter = {255, 0, 255, false};
+static HallDriveGuard hall_guard = {0, false};
 static int adc_bias;
 static volatile bool armed;
 static uint32_t active_cycles;
@@ -95,14 +96,20 @@ static void on_pwm_wrap(void) {
         HALL_STABLE_CYCLES, HALL_VALIDATE_TRANSITIONS, throttle == 0);
     if (hall == 255) ++invalid_hall_samples;
     if (!previously_faulted && hall_filter.transition_fault) ++transition_faults;
-    if (!armed || !throttle || hall == 255 || hall_filter.transition_fault) {
-        drive_block = !armed ? 1 : !throttle ? 2 : hall == 255 ? 3 : 4;
+    int guarded_duty = duty_cycle;
+    HallDriveAction action = hall_drive_step(&hall_guard, motor_state,
+        hall_filter.transition_fault, armed, throttle, HALL_LOSS_TIMEOUT_CYCLES,
+        CURRENT_CONTROL, &guarded_duty);
+    duty_cycle = guarded_duty;
+    if (action == HALL_DRIVE_RESET) {
+        drive_block = !armed ? 1 : !throttle ? 2 : hall_guard.loss_fault ? 7 : 4;
         duty_cycle = 0; current_target_ma = 0; active_cycles = 0;
         write_pwm(255, 0, false);
-    } else if (motor_state > 5) {
-        drive_block = 5;
-        // A valid new sector is still settling. Blank this cycle without
-        // restarting the throttle ramp on every normal commutation edge.
+    } else if (action == HALL_DRIVE_BLANK) {
+        drive_block = hall == 255 ? 3 : 5;
+        // Both ambiguous reads and valid sectors awaiting stability blank
+        // outputs, but preserve the ramp for a bounded recovery interval.
+        current_target_ma = 0;
         write_pwm(255, 0, false);
     } else {
         drive_block = 0;
@@ -236,9 +243,9 @@ int main(void) {
         bool is_armed = armed;
         restore_interrupts(flags);
         printf("build=%s\n", PROGRAMMER_BUILD_ID);
-        const char *blocks[] = {"drive", "throttle_not_released", "zero_throttle", "invalid_hall", "transition_fault", "hall_settling", "adc_error"};
+        const char *blocks[] = {"drive", "throttle_not_released", "zero_throttle", "invalid_hall", "transition_fault", "hall_settling", "adc_error", "hall_loss_fault"};
         printf("diag cal=%s throttle_adc=%u throttle=%u armed=%u raw_hall=%u hall=%u motor=%u duty=%d block=%s\n",
-            cal_result, throttle_adc, throttle, is_armed, raw, h, state, duty, blocks[block < 7 ? block : 6]);
+            cal_result, throttle_adc, throttle, is_armed, raw, h, state, duty, blocks[block < 8 ? block : 6]);
         printf("hallToMotor array:");
         for (unsigned i = 0; i < 8; ++i) printf(" %u", hallToMotor[i]);
         printf("\n");

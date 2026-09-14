@@ -32,6 +32,14 @@ class ConfigTests(unittest.TestCase):
         config['HALL_TABLE'][2] = 2
         with self.assertRaises(ValueError): validate(config)
 
+    def test_hall_loss_timeout_exceeds_settling(self):
+        for timeout in (2, 15, 16):
+            with self.subTest(timeout=timeout), self.assertRaises(ValueError):
+                validate({**defaults(), 'HALL_STABLE_CYCLES': 16,
+                          'HALL_LOSS_TIMEOUT_CYCLES': timeout})
+        validate({**defaults(), 'HALL_STABLE_CYCLES': 16,
+                  'HALL_LOSS_TIMEOUT_CYCLES': 17})
+
     def test_unknown_field(self):
         with self.assertRaises(ValueError): validate({**defaults(), 'COMMAND': 'anything'})
 

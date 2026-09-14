@@ -44,6 +44,35 @@ static inline unsigned hall_filter_step(HallFilter *f, unsigned raw,
     f->accepted = state;
     return state;
 }
+typedef struct {
+    unsigned uncertain_cycles;
+    bool loss_fault;
+} HallDriveGuard;
+typedef enum { HALL_DRIVE_RESET, HALL_DRIVE_BLANK, HALL_DRIVE_RUN } HallDriveAction;
+// Uncertain feedback NEVER energizes a stale sector. Preserve only the ramp
+// across short gaps; sustained loss latches until the throttle is released.
+static inline HallDriveAction hall_drive_step(HallDriveGuard *g, unsigned state,
+        bool transition_fault, bool armed, int throttle, unsigned timeout,
+        bool current_control, int *duty) {
+    if (!throttle) { g->uncertain_cycles = 0; g->loss_fault = false; }
+    if (armed && throttle && !g->loss_fault) {
+        if (state > 5) {
+            if (g->uncertain_cycles < timeout) ++g->uncertain_cycles;
+            if (g->uncertain_cycles >= timeout) g->loss_fault = true;
+        } else g->uncertain_cycles = 0;
+    }
+    if (!armed || !throttle || transition_fault || g->loss_fault) {
+        *duty = 0;
+        return HALL_DRIVE_RESET;
+    }
+    if (state > 5) {
+        // Honor falling duty demand even while blanked. Never integrate the
+        // current controller against zero current while outputs are off.
+        if (!current_control && *duty > throttle * 256) *duty = throttle * 256;
+        return HALL_DRIVE_BLANK;
+    }
+    return HALL_DRIVE_RUN;
+}
 static inline int clamp_duty(int64_t duty) {
     return duty < 0 ? 0 : duty > 65535 ? 65535 : (int)duty;
 }
